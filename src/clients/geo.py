@@ -6,7 +6,7 @@ from typing import Optional
 from urllib.parse import urlencode, urljoin
 
 import httpx
-
+import os
 from clients.base.base import BaseClient
 from clients.shemas import LocalityDTO
 
@@ -42,11 +42,12 @@ class LocationClient(BaseClient):
         :return:
         """
 
-        endpoint = "reverse-geocode-client"
+        endpoint = "reverse-geocode"
         query_params = {
             "latitude": latitude,
             "longitude": longitude,
             "localityLanguage": "en",
+            "key": os.getenv("API_KEY"),
         }
         url = urljoin(
             self.base_url,

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from exceptions import ApiHTTPException, ObjectNotFoundException
 from models.places import Place
-from schemas.places import PlaceResponse, PlacesListResponse, PlaceUpdate
+from schemas.places import PlaceResponse, Description, PlaceUpdate
 from schemas.routes import MetadataTag
 from services.places_service import PlacesService
 
@@ -18,14 +18,14 @@ tag_places = MetadataTag(
 @router.get(
     "",
     summary="Получение списка объектов",
-    response_model=PlacesListResponse,
+    response_model=Page[Place],
 )
 async def get_list(
     limit: int = Query(
         20, gt=0, le=100, description="Ограничение на количество объектов в выборке"
     ),
     places_service: PlacesService = Depends(),
-) -> PlacesListResponse:
+) -> Page[Place]:
     """
     Получение списка любимых мест.
 
@@ -34,7 +34,7 @@ async def get_list(
     :return:
     """
 
-    return PlacesListResponse(data=await places_service.get_places_list(limit=limit))
+    return paginate(await places_service.get_places_list(limit=limit))
 
 
 @router.get(
@@ -66,7 +66,7 @@ async def get_one(
     status_code=status.HTTP_201_CREATED,
 )
 async def create(
-    place: Place, places_service: PlacesService = Depends()
+    place_update: PlaceUpdate, places_service: PlacesService = Depends()
 ) -> PlaceResponse:
     """
     Создание нового объекта любимого места по переданным данным.
@@ -97,11 +97,15 @@ async def update(
     Обновление объекта любимого места по переданным данным.
 
     :param primary_key: Идентификатор объекта.
-    :param place: Данные для обновления объекта.
+    :param place_request: Данные для обновления объекта.
     :param places_service: Сервис для работы с информацией о любимых местах.
     :return:
     """
-
+    place = Place(
+        description=place_update.description,
+        longitude=place_update.longitude,
+        latitude=place_update.latitude,
+    )
     if not await places_service.update_place(primary_key, place):
         raise ObjectNotFoundException
 
@@ -127,18 +131,35 @@ async def delete(primary_key: int, places_service: PlacesService = Depends()) ->
 
 
 @router.post(
-    "",
+    "/auto",
     summary="Создание нового объекта с автоматическим определением координат",
     response_model=PlaceResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_auto() -> PlaceResponse:
+async def create_auto(request: Request,
+    description: Description,
+    places_service: PlacesService = Depends(),) -> PlaceResponse:
     """
     Создание нового объекта любимого места с автоматическим определением координат.
 
     :return:
     """
+    geo_info: IpinfoQuery = geocoder.ip("me")
+    if geo_info.latlng:
+        latitude, longitude = geo_info.latlng
+        place = Place(
+            description=description.description,
+            longitude=longitude,
+            latitude=latitude,
+        )
 
+        if primary_key := await places_service.create_place(place):
+            return PlaceResponse(data=await places_service.get_place(primary_key))
+
+    raise ApiHTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail="Объект не был создан",
+    )
     # Пример:
     #
     # import geocoder
